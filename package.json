@@ -1,0 +1,15 @@
+{
+  "name": "images-extractor",
+  "version": "1.0.0",
+  "description": "Crawl a website, extract image URLs and route URLs, and save them into an Excel workbook.",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node extract-images.js"
+  },
+  "dependencies": {
+    "cheerio": "^1.0.0-rc.14",
+    "playwright": "^1.44.0",
+    "xlsx": "^0.18.5"
+  }
+}
