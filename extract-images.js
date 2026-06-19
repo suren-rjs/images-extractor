@@ -9,12 +9,15 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const args = process.argv.slice(2);
-if (args.length < 1) {
-  console.error('Usage: node extract-images.js <url>');
+const singlePage = args.includes('--single-page');
+const remainingArgs = args.filter(arg => arg !== '--single-page');
+
+if (remainingArgs.length < 1) {
+  console.error('Usage: node extract-images.js [--single-page] <url>');
   process.exit(1);
 }
 
-const startUrl = args[0];
+const startUrl = remainingArgs[0];
 
 function normalizeUrl(urlString, baseUrl) {
   try {
@@ -85,7 +88,7 @@ function extractLinks(html, pageUrl) {
   };
 }
 
-async function crawl(startUrl) {
+async function crawl(startUrl, singlePage) {
   const browser = await chromium.launch({ headless: true });
   const context = await browser.newContext({
     userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
@@ -151,12 +154,13 @@ async function crawl(startUrl) {
       const pageImages = await page.$$eval('img[src]', (imgs) =>
         imgs.map((img) => ({
           src: img.getAttribute('src'),
+          alt: img.getAttribute('alt') || '',
           width: img.naturalWidth || img.clientWidth || 0
         }))
       );
 
       const seenImages = new Set();
-      pageImages.forEach(({ src, width }) => {
+      pageImages.forEach(({ src, alt, width }) => {
         const normalizedImage = normalizeUrl(src, currentUrl);
         if (!normalizedImage || seenImages.has(normalizedImage)) {
           return;
@@ -165,16 +169,19 @@ async function crawl(startUrl) {
         allImages.push({
           route: currentUrl,
           image: normalizedImage,
+          alt,
           size: imageSizes.get(normalizedImage) ?? null,
           width: width || null
         });
       });
 
-      routes.forEach((route) => {
-        if (!visited.has(route) && !queue.includes(route)) {
-          queue.push(route);
-        }
-      });
+      if (!singlePage) {
+        routes.forEach((route) => {
+          if (!visited.has(route) && !queue.includes(route)) {
+            queue.push(route);
+          }
+        });
+      }
     } catch (error) {
       console.warn(`Warning: could not crawl ${currentUrl} — ${error.message}`);
     }
@@ -187,9 +194,9 @@ async function crawl(startUrl) {
 function writeExcel(allImages, hostname) {
   const workbook = xlsx.utils.book_new();
 
-  const sheet = [ ['RouteUrl', 'ImageUrl', 'ImageSizeKB', 'ImageWidth'] ];
+  const sheet = [ ['RouteUrl', 'ImageUrl', 'ImageAltText', 'ImageSizeKB', 'ImageWidth'] ];
   for (const entry of allImages) {
-    sheet.push([entry.route, entry.image, entry.size, entry.width]);
+    sheet.push([entry.route, entry.image, entry.alt, entry.size, entry.width]);
   }
 
   workbook.SheetNames.push('Data');
@@ -215,7 +222,7 @@ function getHostname(urlString) {
       throw new Error('Invalid start URL. Use a full URL like https://example.com/');
     }
 
-    const allImages = await crawl(normalizedStartUrl);
+    const allImages = await crawl(normalizedStartUrl, singlePage);
     const hostname = getHostname(normalizedStartUrl);
     const outputPath = writeExcel(allImages, hostname);
 
